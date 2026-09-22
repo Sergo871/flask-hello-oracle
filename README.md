@@ -6,7 +6,9 @@ Aplicație Flask simplă care se conectează la **Oracle Autonomous Database (AD
 SELECT 'hello world' FROM DUAL
 ```
 
-**Demo live:** `http://DOMENIUL-TAU` <!-- TODO: pune aici domeniul (și în câmpul "Website" din secțiunea About a repo-ului) -->
+**Demo live (Windows Server, OCI):** http://141.147.9.113:5000
+
+<!-- TODO: domeniul pentru VM-ul Linux (nginx) -->
 
 ## Tehnologii
 

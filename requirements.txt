@@ -1,2 +1,5 @@
 Flask
 oracledb
+python-dotenv
+gunicorn; platform_system != "Windows"
+waitress; platform_system == "Windows"

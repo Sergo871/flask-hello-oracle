@@ -6,17 +6,23 @@ Aplicație Flask simplă care se conectează la **Oracle Autonomous Database (AD
 SELECT 'hello world' FROM DUAL
 ```
 
-**Demo live (Windows Server, OCI):** http://141.147.9.113:5000
+## Demo live
 
-<!-- TODO: domeniul pentru VM-ul Linux (nginx) -->
+| Unde | Link |
+|------|------|
+| **Linux VM (Oracle Linux 9 + nginx + HTTPS)** | **https://flask-hello-oracle.duckdns.org** |
+| Windows Server VM (waitress) | http://141.147.9.113:5000 |
+
+Ambele afișează **hello world**, citit din Oracle Autonomous Database.
 
 ## Tehnologii
 
 - Python 3 + Flask
 - python-oracledb (mod thin, fără Oracle Instant Client)
 - Oracle Autonomous Database (Always Free) + wallet mTLS
-- Linux VM (Always Free): gunicorn + nginx + systemd
-- Windows Server VM: waitress
+- Linux VM (Oracle Linux 9, Ampere A1 Always Free): gunicorn + nginx + systemd, HTTPS Let's Encrypt (certbot)
+- Domeniu gratuit DuckDNS: `flask-hello-oracle.duckdns.org`
+- Windows Server VM: waitress + Scheduled Task
 
 ## Structura proiectului
 
@@ -64,22 +70,38 @@ python app.py              # test rapid pe http://IP:5000
 ### Producție: systemd + nginx + domeniu
 
 ```bash
+sudo dnf install -y git python3 python3-pip nginx
+
+# serviciul systemd (gunicorn pe 127.0.0.1:5000); .env e citit de app.py (python-dotenv)
+# SELinux: systemd trebuie să poată executa binarele din venv
+sudo semanage fcontext -a -t bin_t "/home/opc/flask-hello-oracle/venv/bin(/.*)?"
+sudo restorecon -R /home/opc/flask-hello-oracle/venv/bin
 sudo cp deploy/linux/flask-hello.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now flask-hello
 
-sudo dnf install -y nginx
-sudo cp deploy/linux/nginx.conf /etc/nginx/conf.d/flask-hello.conf   # editează server_name
-sudo setsebool -P httpd_can_network_connect 1                         # SELinux
+# nginx ca reverse proxy
+sudo cp deploy/linux/nginx.conf /etc/nginx/conf.d/flask-hello.conf   # server_name = domeniul
+sudo setsebool -P httpd_can_network_connect 1                         # SELinux: nginx -> gunicorn
 sudo systemctl enable --now nginx
 sudo firewall-cmd --permanent --add-service=http --add-service=https
 sudo firewall-cmd --reload
+
+# HTTPS cu Let's Encrypt (certbot e în EPEL)
+sudo dnf config-manager --enable ol9_developer_EPEL
+sudo dnf install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d flask-hello-oracle.duckdns.org --redirect
+sudo systemctl enable --now certbot-renew.timer                      # reînnoire automată
 ```
 
 Nu uita:
-- în OCI: *VCN → Security List* → Ingress rule pentru porturile TCP 80 și 443;
-- la registrar (GoDaddy etc.): înregistrare DNS **A** → IP-ul public al VM-ului;
-- HTTPS (opțional): `sudo dnf install certbot python3-certbot-nginx && sudo certbot --nginx`.
+- în OCI: *VCN → Subnet → Security List* → Ingress rule TCP 80 și 443 din `0.0.0.0/0`;
+- DNS: subdomeniul `flask-hello-oracle` pe [duckdns.org](https://www.duckdns.org) → IP-ul public al VM-ului Linux
+  (la un domeniu cumpărat, de ex. GoDaddy: înregistrare **A** → IP-ul VM-ului).
+
+Ce rulează efectiv pe VM-ul Linux: `vm-flask` (Oracle Linux 9.8, VM.Standard.A1.Flex 1 OCPU / 6 GB),
+proiectul în `/home/opc/flask-hello-oracle`, wallet-ul în `/home/opc/wallet` (`chmod 600`),
+serviciile `flask-hello`, `nginx` și `certbot-renew.timer`.
 
 ## Rulare pe Windows Server (OCI)
 
@@ -112,6 +134,10 @@ Nu uita:
    ```
 
    Oprire / pornire: `Stop-ScheduledTask FlaskHelloOracle` / `Start-ScheduledTask FlaskHelloOracle`.
+
+Ce rulează efectiv pe Windows Server: proiectul în `C:\flask-hello-oracle`, wallet-ul în `C:\wallet`,
+Scheduled Task `FlaskHelloOracle` (waitress pe portul 5000, pornește la boot), regula *Flask 5000*
+în Windows Firewall și în Security List-ul OCI → http://141.147.9.113:5000.
 
 ## Autor
 

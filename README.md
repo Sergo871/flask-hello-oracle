@@ -30,7 +30,8 @@ flask-hello-oracle/
 │   │   ├── flask-hello.service   # serviciu systemd (gunicorn)
 │   │   └── nginx.conf            # reverse proxy pentru domeniu
 │   └── windows/
-│       └── run.ps1               # instalare + pornire pe Windows Server
+│       ├── run.ps1               # instalare + pornire pe Windows Server
+│       └── install-task.ps1      # pornire automată la boot
 └── README.md
 ```
 
@@ -103,6 +104,14 @@ Nu uita:
    și adaugă regula TCP 5000 și în *Security List* din OCI.
 
 5. Verifică: `http://IP-PUBLIC:5000` → **hello world**.
+
+6. Pornire automată la boot (Scheduled Task, rulează ca SYSTEM):
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\deploy\windows\install-task.ps1
+   ```
+
+   Oprire / pornire: `Stop-ScheduledTask FlaskHelloOracle` / `Start-ScheduledTask FlaskHelloOracle`.
 
 ## Autor
 

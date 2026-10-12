@@ -10,10 +10,19 @@ IMG=ocid1.image.oc1.eu-frankfurt-1.aaaaaaaa4yruuzv353vx4cf3tcsimt5xqvls6reilpxcc
 KEY=$HOME/.ssh/authorized_keys
 ADS="eoNu:EU-FRANKFURT-1-AD-1 eoNu:EU-FRANKFURT-1-AD-2 eoNu:EU-FRANKFURT-1-AD-3"
 
-# dacă există deja, nu mai crea încă unul
-if oci compute instance list -c "$C" --display-name vm-hestia | jq -e '.data[] | select(."lifecycle-state" != "TERMINATED")' >/dev/null 2>&1; then
-  echo "vm-hestia exista deja"; exit 0
+command -v oci >/dev/null || { echo "EROARE: oci nu e instalat"; exit 1; }
+command -v jq >/dev/null || { echo "EROARE: jq nu e instalat"; exit 1; }
+[ -n "$C" ] && [ "$C" != null ] || { echo "EROARE: nu am aflat compartimentul din metadata"; exit 1; }
+echo "compartiment: $C"
+
+# verificare: are vm-flask dreptul să lucreze cu instanțe? (grupul dinamic + politica)
+if ! LIST=$(oci compute instance list -c "$C" --all 2>&1); then
+  echo "EROARE de acces (grupul dinamic / politica):"; echo "$LIST" | grep -E '"(code|message)"'; exit 1
 fi
+[ -n "$LIST" ] || LIST='{"data":[]}'
+EXIST=$(echo "$LIST" | jq -r '.data[]? | select(."display-name"=="vm-hestia" and ."lifecycle-state"!="TERMINATED") | ."lifecycle-state"')
+if [ -n "$EXIST" ]; then echo "vm-hestia exista deja (stare: $EXIST)"; exit 0; fi
+echo "acces OK, incep sa incerc crearea vm-hestia"
 
 while true; do
   for AD in $ADS; do

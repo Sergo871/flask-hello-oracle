@@ -54,11 +54,15 @@ block = f"""    location = /chess {{ return 301 /chess/; }}
     }}
 
 """
-# în blocul HTTPS (după "listen 443"), înainte de primul "location"
+# în blocul HTTPS (cel cu "listen 443", pe care certbot îl pune la sfârșitul blocului),
+# înainte de primul "location" din acel bloc
 i = text.find("listen 443")
 if i < 0:
     sys.exit("Nu găsesc blocul HTTPS (listen 443) în " + path)
-m = re.compile(r"^[ \t]*location\b", re.M).search(text, i)
+starts = [m.start() for m in re.finditer(r"^\s*server\s*\{", text[:i], re.M)]
+if not starts:
+    sys.exit("Nu găsesc începutul blocului server")
+m = re.compile(r"^[ \t]*location\b", re.M).search(text, starts[-1])
 if not m:
     sys.exit("Nu găsesc niciun location în blocul HTTPS")
 open(path, "w").write(text[:m.start()] + block + text[m.start():])

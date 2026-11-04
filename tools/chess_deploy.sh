@@ -10,7 +10,6 @@ PORT=5050
 REPO="https://github.com/Sergo871/lets-make-a-website.git"
 BRANCH="claude/beautiful-tesla-c1c3fm"
 SRC="/opt/wizard-chess-src"
-NGINX_CONF="/etc/nginx/conf.d/flask-hello.conf"
 
 if [[ $EUID -ne 0 ]]; then echo "Rulează cu sudo." >&2; exit 1; fi
 
@@ -37,14 +36,13 @@ sleep 2
 curl -fsS -o /dev/null "http://127.0.0.1:$PORT/" || { journalctl -u wizard-chess -n 30 --no-pager; exit 1; }
 
 echo "==> nginx: /chess/"
-if ! grep -q "location /chess/" "$NGINX_CONF"; then
-  cp "$NGINX_CONF" "$NGINX_CONF.bak-chess"
-  python3 - "$NGINX_CONF" "$PORT" <<'PY'
-import re, sys
-path, port = sys.argv[1], sys.argv[2]
-text = open(path).read()
-block = f"""    location = /chess {{ return 301 /chess/; }}
-
+if ! grep -rqs "location /chess/" /etc/nginx/; then
+  # caută blocul server HTTPS (listen 443) al domeniului în toate fișierele nginx
+  CONF=$(python3 - "$PORT" <<'PY'
+import glob, re, sys
+port = sys.argv[1]
+block = f"""
+    location = /chess {{ return 301 /chess/; }}
     location /chess/ {{
         proxy_pass http://127.0.0.1:{port}/;
         proxy_set_header Host $host;
@@ -52,23 +50,42 @@ block = f"""    location = /chess {{ return 301 /chess/; }}
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }}
-
 """
-# în blocul HTTPS (cel cu "listen 443", pe care certbot îl pune la sfârșitul blocului),
-# înainte de primul "location" din acel bloc
-i = text.find("listen 443")
-if i < 0:
-    sys.exit("Nu găsesc blocul HTTPS (listen 443) în " + path)
-starts = [m.start() for m in re.finditer(r"^\s*server\s*\{", text[:i], re.M)]
-if not starts:
-    sys.exit("Nu găsesc începutul blocului server")
-m = re.compile(r"^[ \t]*location\b", re.M).search(text, starts[-1])
-if not m:
-    sys.exit("Nu găsesc niciun location în blocul HTTPS")
-open(path, "w").write(text[:m.start()] + block + text[m.start():])
+
+def server_blocks(text):
+    """(poziția de după '{', textul blocului) pentru fiecare bloc server, cu potrivirea acoladelor."""
+    clean = re.sub(r"#[^\n]*", lambda m: " " * len(m.group()), text)  # comentariile nu contează
+    for m in re.finditer(r"\bserver\s*\{", clean):
+        depth, j = 1, m.end()
+        while j < len(clean) and depth:
+            depth += {"{": 1, "}": -1}.get(clean[j], 0)
+            j += 1
+        yield m.end(), clean[m.end():j]
+
+best = None
+for path in sorted(glob.glob("/etc/nginx/conf.d/*.conf")) + ["/etc/nginx/nginx.conf"]:
+    try:
+        text = open(path).read()
+    except OSError:
+        continue
+    for pos, body in server_blocks(text):
+        if not re.search(r"\blisten\s+[^;]*443", body):
+            continue
+        score = 2 if "flask-hello-oracle" in body else 1
+        if not best or score > best[0]:
+            best = (score, path, pos)
+if not best:
+    sys.exit("Nu găsesc niciun bloc server cu listen 443 în /etc/nginx")
+_, path, pos = best
+text = open(path).read()
+open(path + ".bak-chess", "w").write(text)
+open(path, "w").write(text[:pos] + block + text[pos:])  # ordinea location-urilor prefix nu contează în nginx
+print(path)
 PY
+)
+  echo "Am adăugat /chess/ în $CONF"
   if ! nginx -t; then
-    cp "$NGINX_CONF.bak-chess" "$NGINX_CONF"
+    cp "$CONF.bak-chess" "$CONF"
     echo "nginx -t a eșuat, am pus configurația înapoi." >&2
     exit 1
   fi
